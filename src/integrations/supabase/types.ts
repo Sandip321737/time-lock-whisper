@@ -14,7 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      locks: {
+        Row: {
+          created_at: string
+          encrypted_pin: string
+          id: string
+          label: string
+          panic_unlock_time: string | null
+          unlock_time: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          encrypted_pin: string
+          id?: string
+          label: string
+          panic_unlock_time?: string | null
+          unlock_time: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          encrypted_pin?: string
+          id?: string
+          label?: string
+          panic_unlock_time?: string | null
+          unlock_time?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
