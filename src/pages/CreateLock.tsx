@@ -16,7 +16,7 @@ export default function CreateLock() {
   const [showPin, setShowPin] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (pin.length < 4) {
       toast.error('PIN must be at least 4 digits');
       return;
