@@ -13,8 +13,7 @@ interface PanicButtonProps {
 function getCooldownRemaining(panicTime: number | null): number {
   if (!panicTime) return 0;
   const elapsed = Date.now() - panicTime;
-  const remaining = 24 * 60 * 60 * 1000 - elapsed;
-  return Math.max(0, remaining);
+  return Math.max(0, 24 * 60 * 60 * 1000 - elapsed);
 }
 
 function formatCooldown(ms: number): string {
@@ -27,33 +26,38 @@ function formatCooldown(ms: number): string {
 export function PanicButton({ lockId, onExtended }: PanicButtonProps) {
   const [confirming, setConfirming] = useState(false);
   const [cooldownMs, setCooldownMs] = useState(0);
+  const [panicTime, setPanicTime] = useState<number | null>(null);
 
-  // Read cooldown from persisted lock data so refresh preserves state
   useEffect(() => {
-    const tick = () => {
-      const lock = getLockById(lockId);
-      setCooldownMs(getCooldownRemaining(lock?.panicUnlockTime ?? null));
-    };
+    let mounted = true;
+    getLockById(lockId).then((lock) => {
+      if (mounted && lock) setPanicTime(lock.panicUnlockTime);
+    });
+    return () => { mounted = false; };
+  }, [lockId]);
+
+  useEffect(() => {
+    const tick = () => setCooldownMs(getCooldownRemaining(panicTime));
     tick();
     const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
-  }, [lockId]);
+  }, [panicTime]);
 
-  const handlePanic = () => {
+  const handlePanic = async () => {
     if (!confirming) {
       setConfirming(true);
       setTimeout(() => setConfirming(false), 5000);
       return;
     }
 
-    const result = panicUnlock(lockId);
+    const result = await panicUnlock(lockId);
     if (result.success) {
       toast.success('Timer extended by 24 hours', {
         description: 'Your impulse has been delayed. Stay strong.',
       });
       onExtended?.();
-      const lock = getLockById(lockId);
-      setCooldownMs(getCooldownRemaining(lock?.panicUnlockTime ?? null));
+      const lock = await getLockById(lockId);
+      if (lock) setPanicTime(lock.panicUnlockTime);
     } else {
       toast.error(result.message);
     }

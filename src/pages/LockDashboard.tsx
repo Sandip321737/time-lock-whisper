@@ -17,9 +17,9 @@ export default function LockDashboard() {
   const [revealedPin, setRevealedPin] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const refreshLock = useCallback(() => {
+  const refreshLock = useCallback(async () => {
     if (!id) return;
-    const l = getLockById(id);
+    const l = await getLockById(id);
     if (!l) {
       navigate('/');
       return;

@@ -16,7 +16,7 @@ export default function CreateLock() {
   const [showPin, setShowPin] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (pin.length < 4) {
       toast.error('PIN must be at least 4 digits');
       return;
@@ -36,7 +36,7 @@ export default function CreateLock() {
 
     setCreating(true);
     try {
-      const lock = createLock(pin, duration, label.trim());
+      const lock = await createLock(pin, duration, label.trim());
       toast.success('Lock created successfully');
       setTimeout(() => navigate(`/lock/${lock.id}`), 500);
     } catch (e: unknown) {

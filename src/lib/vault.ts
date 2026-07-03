@@ -1,16 +1,37 @@
 import CryptoJS from 'crypto-js';
+import { supabase } from '@/integrations/supabase/client';
 
-const ENCRYPTION_KEY = 'vault-time-lock-v1-key'; // In production, use server-side key
-const STORAGE_KEY = 'vault_locks';
+const ENCRYPTION_KEY = 'vault-time-lock-v1-key';
 
 export interface VaultLock {
   id: string;
   label: string;
   encryptedPin: string;
-  unlockTime: number; // timestamp ms
+  unlockTime: number;
   panicUnlockTime: number | null;
   createdAt: number;
   status: 'locked' | 'unlocked';
+}
+
+interface DbRow {
+  id: string;
+  label: string;
+  encrypted_pin: string;
+  unlock_time: string;
+  panic_unlock_time: string | null;
+  created_at: string;
+}
+
+function toLock(row: DbRow): VaultLock {
+  return {
+    id: row.id,
+    label: row.label,
+    encryptedPin: row.encrypted_pin,
+    unlockTime: new Date(row.unlock_time).getTime(),
+    panicUnlockTime: row.panic_unlock_time ? new Date(row.panic_unlock_time).getTime() : null,
+    createdAt: new Date(row.created_at).getTime(),
+    status: 'locked',
+  };
 }
 
 export function encryptPin(pin: string): string {
@@ -22,45 +43,47 @@ export function decryptPin(encrypted: string): string {
   return bytes.toString(CryptoJS.enc.Utf8);
 }
 
-export function createLock(pin: string, durationDays: number, label: string): VaultLock {
+export async function createLock(pin: string, durationDays: number, label: string): Promise<VaultLock> {
   if (durationDays < 30) throw new Error('Minimum lock duration is 30 days');
   if (!pin || pin.length < 4) throw new Error('PIN must be at least 4 digits');
 
-  const now = Date.now();
-  const lock: VaultLock = {
-    id: crypto.randomUUID(),
-    label,
-    encryptedPin: encryptPin(pin),
-    unlockTime: now + durationDays * 24 * 60 * 60 * 1000,
-    panicUnlockTime: null,
-    createdAt: now,
-    status: 'locked',
-  };
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) throw new Error('Not authenticated');
 
-  const locks = getLocks();
-  locks.push(lock);
-  saveLocks(locks);
-  return lock;
+  const unlockTime = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('locks')
+    .insert({
+      user_id: userData.user.id,
+      label,
+      encrypted_pin: encryptPin(pin),
+      unlock_time: unlockTime,
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return toLock(data as DbRow);
 }
 
-export function getLocks(): VaultLock[] {
-  try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
-  } catch {
-    return [];
-  }
+export async function getLocks(): Promise<VaultLock[]> {
+  const { data, error } = await supabase
+    .from('locks')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return (data as DbRow[]).map(toLock);
 }
 
-export function saveLocks(locks: VaultLock[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(locks));
+export async function getLockById(id: string): Promise<VaultLock | null> {
+  const { data, error } = await supabase.from('locks').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return data ? toLock(data as DbRow) : null;
 }
 
-export function getLockById(id: string): VaultLock | undefined {
-  return getLocks().find(l => l.id === id);
-}
-
-export function getRemainingTime(lock: VaultLock): { days: number; hours: number; minutes: number; seconds: number; total: number; progress: number } {
+export function getRemainingTime(lock: VaultLock) {
   const now = Date.now();
   const total = Math.max(0, lock.unlockTime - now);
   const elapsed = now - lock.createdAt;
@@ -75,32 +98,31 @@ export function getRemainingTime(lock: VaultLock): { days: number; hours: number
   return { days, hours, minutes, seconds, total, progress };
 }
 
-export function panicUnlock(lockId: string): { success: boolean; message: string } {
-  const locks = getLocks();
-  const lock = locks.find(l => l.id === lockId);
+export async function panicUnlock(lockId: string): Promise<{ success: boolean; message: string }> {
+  const lock = await getLockById(lockId);
   if (!lock) return { success: false, message: 'Lock not found' };
 
   const now = Date.now();
-  if (lock.panicUnlockTime && (now - lock.panicUnlockTime) < 24 * 60 * 60 * 1000) {
+  if (lock.panicUnlockTime && now - lock.panicUnlockTime < 24 * 60 * 60 * 1000) {
     return { success: false, message: 'Panic unlock can only be used once per 24 hours' };
   }
 
-  lock.unlockTime += 24 * 60 * 60 * 1000;
-  lock.panicUnlockTime = now;
-  saveLocks(locks);
+  const newUnlockTime = new Date(lock.unlockTime + 24 * 60 * 60 * 1000).toISOString();
+  const { error } = await supabase
+    .from('locks')
+    .update({
+      unlock_time: newUnlockTime,
+      panic_unlock_time: new Date(now).toISOString(),
+    })
+    .eq('id', lockId);
+
+  if (error) return { success: false, message: error.message };
   return { success: true, message: 'Timer extended by 24 hours' };
 }
 
-export function revealPin(lockId: string): { success: boolean; pin?: string; message: string } {
-  const lock = getLockById(lockId);
-  if (!lock) return { success: false, message: 'Lock not found' };
-
-  const now = Date.now();
-  if (now < lock.unlockTime) {
-    return { success: false, message: 'Lock is still active' };
-  }
-
-  return { success: true, pin: decryptPin(lock.encryptedPin), message: 'PIN revealed' };
+export async function deleteLock(lockId: string): Promise<void> {
+  const { error } = await supabase.from('locks').delete().eq('id', lockId);
+  if (error) throw error;
 }
 
 export function generateFakeSequence(length: number = 7): Array<{ type: 'digit' | 'backspace'; value?: string }> {
@@ -119,11 +141,5 @@ export function generateFakeSequence(length: number = 7): Array<{ type: 'digit' 
       displayCount++;
     }
   }
-
   return sequence;
-}
-
-export function deleteLock(lockId: string) {
-  const locks = getLocks().filter(l => l.id !== lockId);
-  saveLocks(locks);
 }
