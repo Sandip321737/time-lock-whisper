@@ -36,7 +36,7 @@ export default function CreateLock() {
 
     setCreating(true);
     try {
-      const lock = createLock(pin, duration, label.trim());
+      const lock = await createLock(pin, duration, label.trim());
       toast.success('Lock created successfully');
       setTimeout(() => navigate(`/lock/${lock.id}`), 500);
     } catch (e: unknown) {

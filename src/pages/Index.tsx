@@ -1,24 +1,48 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getLocks, deleteLock, getRemainingTime, VaultLock } from '@/lib/vault';
+import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Lock, Plus, Shield, Trash2, ChevronRight } from 'lucide-react';
+import { Lock, Plus, Shield, Trash2, ChevronRight, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 export default function Index() {
   const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const [locks, setLocks] = useState<VaultLock[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = async () => {
+    try {
+      const data = await getLocks();
+      setLocks(data);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load locks');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    setLocks(getLocks());
+    refresh();
   }, []);
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  // tick every second for countdown
+  useEffect(() => {
+    const interval = setInterval(() => setLocks((l) => [...l]), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteLock(id);
-    setLocks(getLocks());
-    toast.success('Lock deleted');
+    try {
+      await deleteLock(id);
+      await refresh();
+      toast.success('Lock deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    }
   };
 
   return (
@@ -26,6 +50,19 @@ export default function Index() {
       <div className="scanline absolute inset-0 pointer-events-none" />
 
       <div className="relative z-10 max-w-lg mx-auto px-4 py-12">
+        <div className="flex justify-between items-start mb-8">
+          <div className="text-xs font-mono text-muted-foreground truncate max-w-[200px]">
+            {user?.email}
+          </div>
+          <button
+            onClick={() => signOut()}
+            className="text-muted-foreground hover:text-foreground p-2"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
@@ -41,25 +78,21 @@ export default function Index() {
           </motion.div>
           <h1 className="text-3xl font-bold vault-text-glow">PIN Vault</h1>
           <p className="text-sm text-muted-foreground max-w-xs mx-auto">
-            Lock your secrets behind time. No shortcuts. No cheating.
+            Lock your secrets behind time. Stored safely on the server.
           </p>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+        <Button
+          onClick={() => navigate('/create')}
+          className="w-full bg-vault-glow hover:bg-vault-glow/90 text-primary-foreground font-mono font-bold tracking-wider h-12 mb-8"
         >
-          <Button
-            onClick={() => navigate('/create')}
-            className="w-full bg-vault-glow hover:bg-vault-glow/90 text-primary-foreground font-mono font-bold tracking-wider h-12 mb-8"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            CREATE NEW LOCK
-          </Button>
-        </motion.div>
+          <Plus className="w-5 h-5 mr-2" />
+          CREATE NEW LOCK
+        </Button>
 
-        {locks.length > 0 && (
+        {loading ? (
+          <div className="text-center py-8 text-muted-foreground text-sm font-mono">Loading vault...</div>
+        ) : locks.length > 0 ? (
           <div className="space-y-3">
             <p className="text-xs font-mono text-muted-foreground tracking-wider">
               ACTIVE LOCKS ({locks.length})
@@ -106,7 +139,6 @@ export default function Index() {
                       </div>
                     </div>
 
-                    {/* Mini progress bar */}
                     {!isUnlocked && (
                       <div className="mt-3 h-1 bg-vault-surface rounded-full overflow-hidden">
                         <div
@@ -120,9 +152,7 @@ export default function Index() {
               })}
             </AnimatePresence>
           </div>
-        )}
-
-        {locks.length === 0 && (
+        ) : (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
