@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { panicUnlock } from '@/lib/vault';
+import { useState, useEffect } from 'react';
+import { panicUnlock, getLockById } from '@/lib/vault';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,9 +10,34 @@ interface PanicButtonProps {
   onExtended?: () => void;
 }
 
+function getCooldownRemaining(panicTime: number | null): number {
+  if (!panicTime) return 0;
+  const elapsed = Date.now() - panicTime;
+  const remaining = 24 * 60 * 60 * 1000 - elapsed;
+  return Math.max(0, remaining);
+}
+
+function formatCooldown(ms: number): string {
+  const h = Math.floor(ms / (1000 * 60 * 60));
+  const m = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
+  const s = Math.floor((ms % (1000 * 60)) / 1000);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export function PanicButton({ lockId, onExtended }: PanicButtonProps) {
   const [confirming, setConfirming] = useState(false);
-  const [cooldown, setCooldown] = useState(false);
+  const [cooldownMs, setCooldownMs] = useState(0);
+
+  // Read cooldown from persisted lock data so refresh preserves state
+  useEffect(() => {
+    const tick = () => {
+      const lock = getLockById(lockId);
+      setCooldownMs(getCooldownRemaining(lock?.panicUnlockTime ?? null));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [lockId]);
 
   const handlePanic = () => {
     if (!confirming) {
@@ -27,18 +52,19 @@ export function PanicButton({ lockId, onExtended }: PanicButtonProps) {
         description: 'Your impulse has been delayed. Stay strong.',
       });
       onExtended?.();
-      setCooldown(true);
+      const lock = getLockById(lockId);
+      setCooldownMs(getCooldownRemaining(lock?.panicUnlockTime ?? null));
     } else {
       toast.error(result.message);
     }
     setConfirming(false);
   };
 
-  if (cooldown) {
+  if (cooldownMs > 0) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-sm font-mono p-3 bg-vault-surface rounded-lg vault-border-glow">
-        <Clock className="w-4 h-4" />
-        <span>Panic used. Available again in 24h.</span>
+        <Clock className="w-4 h-4 text-vault-warning" />
+        <span>Panic cooldown: <span className="text-vault-warning">{formatCooldown(cooldownMs)}</span></span>
       </div>
     );
   }
