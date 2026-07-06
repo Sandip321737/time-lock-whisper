@@ -1,10 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getLocks, deleteLock, getRemainingTime, VaultLock } from '@/lib/vault';
+import { getLocks, deleteLock, getRemainingTime, decryptPin, VaultLock } from '@/lib/vault';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Plus, Shield, Trash2, ChevronRight, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 export default function Index() {
@@ -12,6 +21,9 @@ export default function Index() {
   const { user, signOut } = useAuth();
   const [locks, setLocks] = useState<VaultLock[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<VaultLock | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
   const refresh = async () => {
     try {
@@ -34,14 +46,36 @@ export default function Index() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const openDelete = (lock: VaultLock, e: React.MouseEvent) => {
     e.stopPropagation();
+    setPinInput('');
+    setDeleteTarget(lock);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    let actualPin = '';
     try {
-      await deleteLock(id);
+      actualPin = decryptPin(deleteTarget.encryptedPin);
+    } catch {
+      toast.error('Unable to verify PIN');
+      return;
+    }
+    if (pinInput.trim() !== actualPin) {
+      toast.error('Incorrect PIN');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteLock(deleteTarget.id);
       await refresh();
       toast.success('Lock deleted');
+      setDeleteTarget(null);
+      setPinInput('');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -130,7 +164,7 @@ export default function Index() {
 
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          onClick={(e) => handleDelete(lock.id, e)}
+                          onClick={(e) => openDelete(lock, e)}
                           className="p-2 text-muted-foreground hover:text-vault-danger transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -164,6 +198,41 @@ export default function Index() {
           </motion.div>
         )}
       </div>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm delete</DialogTitle>
+            <DialogDescription>
+              Enter the PIN for "{deleteTarget?.label}" to permanently delete this lock.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            placeholder="Enter PIN"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirmDelete();
+            }}
+            className="font-mono tracking-widest"
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmDelete}
+              disabled={deleting || !pinInput}
+              className="bg-vault-danger hover:bg-vault-danger/90 text-primary-foreground"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
