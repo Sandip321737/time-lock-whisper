@@ -21,15 +21,9 @@ export default function Index() {
   const { user, signOut } = useAuth();
   const [locks, setLocks] = useState<VaultLock[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const refresh = async () => {
-    try {
-      const data = await getLocks();
-      setLocks(data);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to load locks');
-    } finally {
-      setLoading(false);
+  const [deleteTarget, setDeleteTarget] = useState<VaultLock | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
     }
   };
 
