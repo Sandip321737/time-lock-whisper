@@ -24,6 +24,15 @@ export default function Index() {
   const [deleteTarget, setDeleteTarget] = useState<VaultLock | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [deleting, setDeleting] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const data = await getLocks();
+      setLocks(data);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load locks');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -37,14 +46,36 @@ export default function Index() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const openDelete = (lock: VaultLock, e: React.MouseEvent) => {
     e.stopPropagation();
+    setPinInput('');
+    setDeleteTarget(lock);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    let actualPin = '';
     try {
-      await deleteLock(id);
+      actualPin = decryptPin(deleteTarget.encryptedPin);
+    } catch {
+      toast.error('Unable to verify PIN');
+      return;
+    }
+    if (pinInput.trim() !== actualPin) {
+      toast.error('Incorrect PIN');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteLock(deleteTarget.id);
       await refresh();
       toast.success('Lock deleted');
+      setDeleteTarget(null);
+      setPinInput('');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete');
+    } finally {
+      setDeleting(false);
     }
   };
 
