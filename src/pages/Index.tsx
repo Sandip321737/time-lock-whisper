@@ -1,10 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getLocks, deleteLock, getRemainingTime, VaultLock } from '@/lib/vault';
+import { getLocks, deleteLock, getRemainingTime, decryptPin, VaultLock } from '@/lib/vault';
 import { useAuth } from '@/hooks/useAuth';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Lock, Plus, Shield, Trash2, ChevronRight, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 export default function Index() {
