@@ -164,7 +164,7 @@ export default function Index() {
 
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          onClick={(e) => handleDelete(lock.id, e)}
+                          onClick={(e) => openDelete(lock, e)}
                           className="p-2 text-muted-foreground hover:text-vault-danger transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 className="w-4 h-4" />
